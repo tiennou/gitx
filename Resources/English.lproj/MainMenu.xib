@@ -91,10 +91,10 @@
                                     <action selector="openDocument:" target="-1" id="907"/>
                                 </connections>
                             </menuItem>
-                            <menuItem title="Clone…" id="956">
+                            <menuItem title="Clone…" alternate="YES" id="956">
                                 <modifierMask key="keyEquivalentModifierMask"/>
                                 <connections>
-                                    <action selector="showCloneRepository:" target="-1" id="958"/>
+                                    <action selector="cloneDocument:" target="-1" id="OdR-P2-wKb"/>
                                 </connections>
                             </menuItem>
                             <menuItem title="Open Recent" id="124">

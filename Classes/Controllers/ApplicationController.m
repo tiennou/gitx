@@ -15,7 +15,6 @@
 #import "PBPrefsWindowController.h"
 #import "PBNSURLPathUserDefaultsTransfomer.h"
 #import "PBGitDefaults.h"
-#import "PBCloneRepositoryPanel.h"
 #import "OpenRecentController.h"
 #import "PBGitBinary.h"
 
@@ -169,14 +168,6 @@ static OpenRecentController* recentsDialog = nil;
 	[dict addEntriesFromDictionary:[[NSDictionary alloc] initWithObjectsAndKeys:@"GitX-dev (rowanj fork)", @"ApplicationName", nil]];
 
 	[NSApp orderFrontStandardAboutPanelWithOptions:dict];
-}
-
-- (IBAction) showCloneRepository:(id)sender
-{
-	if (!cloneRepositoryPanel)
-		cloneRepositoryPanel = [PBCloneRepositoryPanel panel];
-
-	[cloneRepositoryPanel showWindow:self];
 }
 
 - (IBAction)installCliTool:(id)sender;

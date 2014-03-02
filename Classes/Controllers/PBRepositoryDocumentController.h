@@ -9,4 +9,7 @@
 #import <Cocoa/Cocoa.h>
 
 @interface PBRepositoryDocumentController : NSDocumentController
+
+- (IBAction)cloneDocument:(id)sender;
+
 @end

@@ -14,6 +14,10 @@
 #import <ObjectiveGit/GTRepository.h>
 
 @implementation PBRepositoryDocumentController
+
+- (void)cloneDocument:(id)sender {
+}
+
 // This method is overridden to configure the open panel to only allow
 // selection of directories
 - (void)beginOpenPanel:(NSOpenPanel *)openPanel forTypes:(NSArray<NSString *> *)inTypes completionHandler:(void (^)(NSInteger))completionHandler {
