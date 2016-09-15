@@ -443,13 +443,7 @@ NS_ENUM(NSUInteger, PBGitIndexOperation) {
 			if (stage) {
 				[input appendFormat:@"%@\0", file.path];
 			} else {
-				NSString *indexInfo;
-				if (file.status == NEW) {
-					// Index info lies because the file is NEW
-					indexInfo = [NSString stringWithFormat:@"0 0000000000000000000000000000000000000000\t%@\0", file.path];
-				} else {
-					indexInfo = [file indexInfo];
-				}
+				NSString *indexInfo = [file indexInfo];
 				[input appendString:indexInfo];
 			}
 		}
