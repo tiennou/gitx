@@ -17,11 +17,6 @@ NS_ASSUME_NONNULL_BEGIN
  * Notifications this class will send
  */
 
-// Refreshing index
-extern NSString *PBGitIndexIndexRefreshStatus;
-extern NSString *PBGitIndexIndexRefreshFailed;
-extern NSString *PBGitIndexFinishedIndexRefresh;
-
 // The "indexChanges" array has changed
 extern NSString *PBGitIndexIndexUpdated;
 
@@ -47,7 +42,7 @@ extern NSString *PBGitIndexAmendMessageAvailable;
 - (instancetype)initWithRepository:(PBGitRepository *)repository;
 
 // Refresh the index
-- (void)refresh;
+- (void)refresh:(nullable void (^)(NSError *error))completionHandler;
 
 - (void)performCommitWithMessage:(NSString *)commitMessage force:(BOOL)force progressHandler:(void (^)(NSString *))progressHandler completionHandler:(void (^)(NSError *error, GTOID *oid))completionHandler;
 

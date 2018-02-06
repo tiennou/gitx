@@ -55,7 +55,6 @@
 
 	PBGitIndex *index = theRepository.index;
 
-	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(refreshFinished:) name:PBGitIndexFinishedIndexRefresh object:index];
 	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(amendCommit:) name:PBGitIndexAmendMessageAvailable object:index];
 	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(indexChanged:) name:PBGitIndexIndexUpdated object:index];
 
@@ -257,7 +256,19 @@
 {
 	self.isBusy = YES;
 	self.status = NSLocalizedString(@"Refreshing index…", @"Message in status bar while the index is refreshing");
-	[repository.index refresh];
+	[repository.index refresh:^(NSError *error) {
+		if (error) {
+			[self.windowController showErrorSheet:error];
+		}
+
+		self.isBusy = NO;
+		self.status = NSLocalizedString(@"Index refresh finished", @"Message in status bar when refreshing the index is done");
+
+		[stagedFilesController rearrangeObjects];
+		[unstagedFilesController rearrangeObjects];
+
+		commitButton.enabled = ([[stagedFilesController arrangedObjects] count] > 0);
+	}];
 
 	// Reload refs (in case HEAD changed)
 	[repository reloadRefs];
@@ -343,7 +354,7 @@
 		}
 		if (anyTrashed)
 		{
-			[self.repository.index refresh];
+			[self refresh:self];
 		}
 	}];
 }
@@ -367,7 +378,7 @@
 	if (!success) {
 		[self.windowController showErrorSheet:error];
 	}
-	[self.repository.index refresh];
+	[self refresh:self];
 }
 
 static void reselectNextFile(NSArrayController *controller)
@@ -414,12 +425,6 @@ static void reselectNextFile(NSArrayController *controller)
 }
 
 # pragma mark PBGitIndex Notification handling
-
-- (void)refreshFinished:(NSNotification *)notification
-{
-	self.isBusy = NO;
-	self.status = NSLocalizedString(@"Index refresh finished", @"Message in status bar when refreshing the index is done");
-}
 
 - (void)amendCommit:(NSNotification *)notification
 {
