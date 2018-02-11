@@ -11,7 +11,7 @@
 #import "PBGitRepositoryDocument.h"
 #import "PBGitRepository.h"
 #import "PBGitBinary.h"
-#import "PBEasyPipe.h"
+#import "PBTask.h"
 #import "PBError.h"
 
 
@@ -28,32 +28,11 @@ NSString * const kGitXProgressErrorInfo          = @"PBGitXProgressErrorInfo";
 	NSString *description;
 	bool hideSuccessScreen;
 
-	NSTask    *gitTask;
 	NSInteger  returnCode;
 
 	NSTextField         *progressDescription;
 	NSProgressIndicator *progressIndicator;
-
-	NSTimer *taskTimer;
 }
-
-- (void) beginRemoteProgressSheetWithTitle:(NSString *)theTitle
-							   description:(NSString *)theDescription
-								 arguments:(NSArray *)args
-									 inDir:(NSString *)dir
-						 hideSuccessScreen:(BOOL)hideSucc;
-
-- (void) showSuccessMessage;
-- (void) showErrorMessage;
-
-- (NSString *) progressTitle;
-- (NSString *) successTitle;
-- (NSString *) successDescription;
-- (NSString *) errorTitle;
-- (NSString *) errorDescription;
-- (NSString *) commandDescription;
-- (NSString *) standardOutputDescription;
-- (NSString *) standardErrorDescription;
 
 @end
 
@@ -147,87 +126,45 @@ NSString * const kGitXProgressErrorInfo          = @"PBGitXProgressErrorInfo";
 	if (dir == nil)
 		dir = [[(PBGitRepositoryDocument *)self.windowController.document repository] workingDirectory];
 
-	gitTask = [PBEasyPipe taskForCommand:[PBGitBinary path]
-								withArgs:arguments
-								   inDir:dir];
-	[[NSNotificationCenter defaultCenter] addObserver:self
-											 selector:@selector(taskCompleted:)
-												 name:NSTaskDidTerminateNotification
-											   object:gitTask];
+	[PBTask launchTask:[PBGitBinary path] arguments:arguments inDirectory:dir completionHandler:^(NSData * _Nullable readData, NSError * _Nullable error) {
+		[self.progressIndicator stopAnimation:nil];
 
-	// having intermittent problem with long running git tasks not sending a termination notice, so periodically check whether the task is done
-	taskTimer = [NSTimer scheduledTimerWithTimeInterval:0.2 target:self selector:@selector(checkTask:) userInfo:nil repeats:YES];
+		PBRemoteProgressSheet* ownRef = self;
+		[self hide];
 
-	[gitTask launch];
+		[ownRef showMessageWithTaskData:readData taskError:error];
+		[ownRef.repository reloadRefs];
+	}];
 }
-
-#pragma mark Notifications
-
-- (void) taskCompleted:(NSNotification *)notification
-{
-	[taskTimer invalidate];
-	[[NSNotificationCenter defaultCenter] removeObserver:self];
-
-	[self.progressIndicator stopAnimation:nil];
-
-	returnCode = [gitTask terminationStatus];
-	PBRemoteProgressSheet* ownRef = self;
-	[self hide];
-	
-	if (returnCode)
-		[ownRef showErrorMessage];
-	else
-		[ownRef showSuccessMessage];
-
-	[ownRef.repository reloadRefs];
-}
-
-
-
-#pragma mark taskTimer
-
-- (void) checkTask:(NSTimer *)timer
-{
-	if (![gitTask isRunning]) {
-		NSLog(@"[%@ %@] gitTask terminated without notification", [self class], NSStringFromSelector(_cmd));
-		[self taskCompleted:nil];
-	}
-}
-
 
 
 #pragma mark Messages
 
-- (void) showSuccessMessage
+
+- (void) showMessageWithTaskData:(NSData *)data taskError:(NSError *)error
 {
-	if(hideSuccessScreen) return;
-	
-	NSMutableString *info = [NSMutableString string];
-	[info appendString:[self successDescription]];
-	[info appendString:[self commandDescription]];
-	[info appendString:[self standardOutputDescription]];
+	if (error) {
+		NSMutableString *info = [NSMutableString string];
+		[info appendString:[self errorDescription]];
+		[info appendString:[self commandDescription]];
 
-	[self.windowController showMessageSheet:self.successTitle infoText:info];
+		if (data) {
+			[info appendString:[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]];
+		}
+
+		[self.windowController showErrorSheet:error];
+	} else if (!hideSuccessScreen) {
+		NSMutableString *info = [NSMutableString string];
+		[info appendString:[self successDescription]];
+		[info appendString:[self commandDescription]];
+
+		if (data) {
+			[info appendString:[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]];
+		}
+
+		[self.windowController showMessageSheet:self.successTitle infoText:info];
+	}
 }
-
-
-- (void) showErrorMessage
-{
-	NSMutableString *info = [NSMutableString string];
-	[info appendString:[self errorDescription]];
-	[info appendString:[self commandDescription]];
-	[info appendString:[self standardOutputDescription]];
-	[info appendString:[self standardErrorDescription]];
-
-	NSDictionary *errorUserInfo = [NSDictionary dictionaryWithObjectsAndKeys:
-								   [self errorTitle], NSLocalizedDescriptionKey,
-								   info, NSLocalizedRecoverySuggestionErrorKey,
-								   nil];
-	NSError *error = [NSError errorWithDomain:PBGitXErrorDomain code:0 userInfo:errorUserInfo];
-
-	[self.windowController showErrorSheet:error];
-}
-
 
 
 #pragma mark Display Strings
@@ -290,39 +227,5 @@ NSString * const kGitXProgressErrorInfo          = @"PBGitXProgressErrorInfo";
 	return [NSString stringWithFormat:@"command: git %@", [arguments componentsJoinedByString:@" "]];
 }
 
-
-- (NSString *) standardOutputDescription
-{
-	if (!gitTask || [gitTask isRunning])
-		return @"";
-
-	NSData *data = [[[gitTask standardOutput] fileHandleForReading] readDataToEndOfFile];
-	NSString *standardOutput = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-
-	if ([standardOutput isEqualToString:@""])
-		return @"";
-
-	return [NSString stringWithFormat:@"\n\n%@", standardOutput];
-}
-
-
-- (NSString *) standardErrorDescription
-{
-	if (!gitTask || [gitTask isRunning])
-		return @"";
-
-	NSData *data = [[[gitTask standardError] fileHandleForReading] readDataToEndOfFile];
-	NSString *standardError = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-
-	if ([standardError isEqualToString:@""])
-		return [NSString stringWithFormat:@"\nerror = %ld", returnCode];
-
-	return [NSString stringWithFormat:@"\n\n%@\nerror = %ld", standardError, returnCode];
-}
-
--(void) dealloc
-{
-	[[NSNotificationCenter defaultCenter] removeObserver:self];
-}
 
 @end
