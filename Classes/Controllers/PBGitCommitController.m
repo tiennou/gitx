@@ -57,9 +57,6 @@
 
 	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(refreshFinished:) name:PBGitIndexFinishedIndexRefresh object:index];
 	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(commitStatusUpdated:) name:PBGitIndexCommitStatus object:index];
-	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(commitFinished:) name:PBGitIndexFinishedCommit object:index];
-	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(commitFailed:) name:PBGitIndexCommitFailed object:index];
-	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(commitHookFailed:) name:PBGitIndexCommitHookFailed object:index];
 	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(amendCommit:) name:PBGitIndexAmendMessageAvailable object:index];
 	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(indexChanged:) name:PBGitIndexIndexUpdated object:index];
 
@@ -180,7 +177,12 @@
 	self.isBusy = YES;
 	commitMessageView.editable = NO;
 
-	[repository.index commitWithMessage:commitMessage andVerify:doVerify];
+	NSError *error = nil;
+	BOOL success = [repository.index commitWithMessage:commitMessage andVerify:doVerify error:&error];
+	if (!success) {
+		[self.windowController showErrorSheet:error];
+		return;
+	}
 }
 
 - (void)discardChangesForFiles:(NSArray *)files force:(BOOL)force
