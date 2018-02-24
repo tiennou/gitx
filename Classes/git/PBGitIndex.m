@@ -20,8 +20,6 @@ NSString *PBGitIndexFinishedIndexRefresh = @"PBGitIndexFinishedIndexRefresh";
 
 NSString *PBGitIndexIndexUpdated = @"PBGitIndexIndexUpdated";
 
-NSString *PBGitIndexCommitStatus = @"PBGitIndexCommitStatus";
-
 NSString *PBGitIndexAmendMessageAvailable = @"PBGitIndexAmendMessageAvailable";
 
 NS_ENUM(NSUInteger, PBGitIndexOperation) {
@@ -269,10 +267,21 @@ NS_ENUM(NSUInteger, PBGitIndexOperation) {
 	return parent;
 }
 
-// TODO: make Asynchronous
-- (BOOL)commitWithMessage:(NSString *)commitMessage andVerify:(BOOL)doVerify error:(NSError **)error
+- (void)performCommitWithMessage:(NSString *)commitMessage force:(BOOL)force progressHandler:(void (^)(NSString *))aProgressHandler completionHandler:(void (^)(NSError *error, GTOID *oid))aCompletionHandler
 {
-	BOOL success = NO;
+	NSParameterAssert(commitMessage != nil && commitMessage.length);
+	NSError *repoError = nil;
+
+	void (^progressHandler)(NSString *) = ^(NSString *msg) {
+		if (aProgressHandler)
+			aProgressHandler(msg);
+	};
+
+	void (^errorHandler)(NSError *) = ^(NSError *error) {
+		if (aCompletionHandler)
+			aCompletionHandler(error, nil);
+	};
+
 	NSMutableString *commitSubject = [@"commit: " mutableCopy];
 	NSRange newLine = [commitMessage rangeOfString:@"\n"];
 	if (newLine.location == NSNotFound)
@@ -284,14 +293,18 @@ NS_ENUM(NSUInteger, PBGitIndexOperation) {
 	commitMessageFile = [self.repository.gitURL.path stringByAppendingPathComponent:@"COMMIT_EDITMSG"];
 	[commitMessage writeToFile:commitMessageFile atomically:YES encoding:NSUTF8StringEncoding error:nil];
 
-	[self postCommitUpdate:@"Creating tree"];
-	NSError *gitError = nil;
-	NSString *tree = [self.repository outputOfTaskWithArguments:@[@"write-tree"] error:&gitError];
+	progressHandler(NSLocalizedString(@"Creating tree", @"PBGitIndex commit - status message"));
+
+	NSString *tree = [self.repository outputOfTaskWithArguments:@[@"write-tree"] error:&repoError];
 	tree = [tree stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-	if ([tree length] != 40) {
-		NSString *desc = @"Creating tree failed";
-		NSString *failure = @"There was an error creating the new commits' tree";
-		return PBReturnError(error, desc, failure, gitError);
+	if (!tree || tree.length != 40) {
+		NSString *desc = NSLocalizedString(@"Creating tree failed", @"PBGitIndex commit - write-tree error description");
+		NSString *reason = NSLocalizedString(@"There was an error creating the new commits' tree", @"PBGitIndex commit - write-tree error reason");
+		NSError *error = [NSError pb_errorWithDescription:desc
+											failureReason:reason
+										  underlyingError:repoError];
+		errorHandler(error);
+		return;
 	}
 
 	/* Are we amending ? */
@@ -302,82 +315,60 @@ NS_ENUM(NSUInteger, PBGitIndexOperation) {
 		[arguments addObject:parent];
 	}
 
-	[self postCommitUpdate:@"Creating commit"];
-	
-    if (doVerify) {
-        [self postCommitUpdate:@"Running hooks"];
-        NSString *hookOutput = nil;
+    if (!force) {
+		progressHandler(NSLocalizedString(@"Running hooks", @"PBGitIndex commit - status message"));
+
 		NSError *hookError = nil;
-		success = [self.repository executeHook:@"pre-commit" arguments:nil output:&hookOutput error:&hookError];
+		BOOL success = [self.repository executeHook:@"pre-commit" error:&hookError];
         if (!success) {
-			return PBReturnErrorWithBuilder(error, ^{
-				NSString *desc = @"Pre-commit hook failed";
-				NSString *failure = @"The pre-commit hook reported an error.";
+			errorHandler(hookError);
+			return;
+		}
 
-				if (hookOutput.length > 0) {
-					failure = [failure stringByAppendingString:@"\nThe hook reported :\n"];
-					failure = [failure stringByAppendingString:hookOutput];
-				}
-
-				return [NSError pb_errorWithDescription:desc failureReason:failure underlyingError:hookError];
-			});
-        }
-
-		success = [self.repository executeHook:@"commit-msg" arguments:@[commitMessageFile] output:&hookOutput error:&hookError];
+		success = [self.repository executeHook:@"commit-msg" arguments:@[commitMessageFile] error:&hookError];
 		if (!success) {
-			return PBReturnErrorWithBuilder(error, ^{
-				NSString *desc = @"Commit-msg hook failed";
-				NSString *failure = @"The commit-msg hook reported an error.";
-
-				if (hookOutput.length > 0) {
-					failure = [failure stringByAppendingString:@"\nThe hook reported :\n"];
-					failure = [failure stringByAppendingString:hookOutput];
-				}
-
-				return [NSError pb_errorWithDescription:desc failureReason:failure underlyingError:hookError];
-			});
+			errorHandler(hookError);
+			return;
         }
-    }
+	}
 	
+	progressHandler(NSLocalizedString(@"Creating commit", @"PBGitIndex commit - status message"));
+
 	commitMessage = [NSString stringWithContentsOfFile:commitMessageFile encoding:NSUTF8StringEncoding error:nil];
 
-	PBTask *task = [self.repository taskWithArguments:arguments];
-	task.additionalEnvironment = self.amendEnvironment;
-	task.standardInputData = [commitMessage dataUsingEncoding:NSUTF8StringEncoding];
+	PBTask *commitTask = [self.repository taskWithArguments:arguments];
+	commitTask.standardInputData = [commitMessage dataUsingEncoding:NSUTF8StringEncoding];
+	commitTask.additionalEnvironment = self.amendEnvironment;
 
-	success = [task launchTask:&gitError];
-	NSString *commit = [[task standardOutputString] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-	if (!success || commit.length != 40) {
-		NSString *desc = @"Creating commit failed";
-		NSString *failure = @"There was an error creating the new commits' object";
-		return PBReturnError(error, desc, failure, gitError);
+	BOOL success = [commitTask launchTask:&repoError];
+	NSString *commitSHA = [commitTask.standardOutputString stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+	if (!success || !commitSHA || commitSHA.length != 40) {
+
+		NSString *desc = NSLocalizedString(@"Creating commit failed", @"PBGitIndex commit - commit-tree error description");
+		NSString *reason = NSLocalizedString(@"There was an error creating the new commits' object", @"PBGitIndex commit - commit-tree error reason");
+		NSError *error = [NSError pb_errorWithDescription:desc
+											failureReason:reason
+										  underlyingError:repoError];
+		errorHandler(error);
+		return;
 	}
-	
-	[self postCommitUpdate:@"Updating HEAD"];
-	success = [self.repository launchTaskWithArguments:@[@"update-ref", @"-m", commitSubject, @"HEAD", commit] error:&gitError];
+
+	progressHandler(NSLocalizedString(@"Updating HEAD", @"PBGitIndex commit - status message"));
+
+	success = [self.repository launchTaskWithArguments:@[@"update-ref", @"-m", commitSubject, @"HEAD", commitSHA] error:&repoError];
 	if (!success) {
-		NSString *desc = @"Failed to update HEAD";
-		NSString *failure = @"There was an error while moving the HEAD reference to point to the new commit.";
-		return PBReturnError(error, desc, failure, gitError);
+		NSString *desc = NSLocalizedString(@"Failed to update HEAD", @"PBGitIndex commit - update-ref error description");
+		NSString *reason = NSLocalizedString(@"There was an error while moving the HEAD reference to point to the new commit.", @"PBGitIndex commit - update-ref error reason");
+		NSError *error = [NSError pb_errorWithDescription:desc
+											failureReason:reason
+										  underlyingError:repoError];
+		errorHandler(error);
+		return;
 	}
 	
-	[self postCommitUpdate:@"Running post-commit hook"];
+	progressHandler(NSLocalizedString(@"Running post-commit hook", @"PBGitIndex commit - status message"));
 
-	NSError *hookError = nil;
-	success = [self.repository executeHook:@"post-commit" error:&hookError];
-	NSMutableDictionary *userInfo = [NSMutableDictionary dictionaryWithObject:[NSNumber numberWithBool:success] forKey:@"success"];
-	NSString *description;  
-	if (success)
-		description = [NSString stringWithFormat:@"Successfully created commit %@", commit];
-	else
-		description = [NSString stringWithFormat:@"Post-commit hook failed, but successfully created commit %@", commit];
-	
-	[userInfo setObject:description forKey:@"description"];
-	[userInfo setObject:commit forKey:@"sha"];
-
-	/* FIXME: In that case, the post-commit hook failed */
-	if (!success)
-		return YES;
+	success = [self.repository executeHook:@"post-commit" error:&repoError];
 
 	self.repository.hasChanged = YES;
 
@@ -387,14 +378,8 @@ NS_ENUM(NSUInteger, PBGitIndexOperation) {
 	else
 		[self refresh];
 
-	return YES;
-}
-
-- (void)postCommitUpdate:(NSString *)update
-{
-	[[NSNotificationCenter defaultCenter] postNotificationName:PBGitIndexCommitStatus
-													object:self
-													  userInfo:[NSDictionary dictionaryWithObject:update forKey:@"description"]];
+	if (aCompletionHandler)
+		aCompletionHandler(repoError, [GTOID oidWithSHA:commitSHA]);
 }
 
 - (BOOL)performStageOrUnstage:(BOOL)stage withFiles:(NSArray *)files error:(NSError **)error

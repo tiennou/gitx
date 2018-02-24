@@ -56,7 +56,6 @@
 	PBGitIndex *index = theRepository.index;
 
 	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(refreshFinished:) name:PBGitIndexFinishedIndexRefresh object:index];
-	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(commitStatusUpdated:) name:PBGitIndexCommitStatus object:index];
 	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(amendCommit:) name:PBGitIndexAmendMessageAvailable object:index];
 	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(indexChanged:) name:PBGitIndexIndexUpdated object:index];
 
@@ -177,12 +176,27 @@
 	self.isBusy = YES;
 	commitMessageView.editable = NO;
 
-	NSError *error = nil;
-	BOOL success = [repository.index commitWithMessage:commitMessage andVerify:doVerify error:&error];
-	if (!success) {
-		[self.windowController showErrorSheet:error];
-		return;
-	}
+	void (^progressBlock)(NSString *) = ^(NSString *msg) {
+		self.status = msg;
+	};
+
+	[repository.index performCommitWithMessage:commitMessage
+										 force:!doVerify
+							   progressHandler:progressBlock
+							 completionHandler:^(NSError *error, GTOID *oid) {
+								 self.isBusy = NO;
+								 commitMessageView.editable = YES;
+								 commitMessageView.string = @"";
+
+								 if (oid) {
+									 [webController setStateMessage:@"Successfully created commit"];
+								 }
+
+								 /* post-commit error can be reported inline with a success */
+								 if (error) {
+									 [self.windowController showErrorSheet:error];
+								 }
+							 }];
 }
 
 - (void)discardChangesForFiles:(NSArray *)files force:(BOOL)force
@@ -403,47 +417,6 @@ static void reselectNextFile(NSArrayController *controller)
 {
 	self.isBusy = NO;
 	self.status = NSLocalizedString(@"Index refresh finished", @"Message in status bar when refreshing the index is done");
-}
-
-- (void)commitStatusUpdated:(NSNotification *)notification
-{
-	self.status = notification.userInfo[kNotificationDictionaryDescriptionKey];
-}
-
-- (void)commitFinished:(NSNotification *)notification
-{
-	commitMessageView.editable = YES;
-	commitMessageView.string = @"";
-	[webController setStateMessage:notification.userInfo[kNotificationDictionaryDescriptionKey]];
-}	
-
-- (void)commitFailed:(NSNotification *)notification
-{
-	self.isBusy = NO;
-	commitMessageView.editable = YES;
-
-	NSString *reason = notification.userInfo[kNotificationDictionaryDescriptionKey];
-	self.status = [NSString stringWithFormat:
-				   NSLocalizedString(@"Commit failed: %@",
-									 @"Message in status bar when creating a commit has failed, including the reason for the failure"),
-				   reason];
-	[self.windowController showMessageSheet:NSLocalizedString(@"Commit failed", @"Title for sheet that creating a commit has failed")
-										 infoText:reason];
-}
-
-- (void)commitHookFailed:(NSNotification *)notification
-{
-	self.isBusy = NO;
-	commitMessageView.editable = YES;
-
-	NSString *reason = notification.userInfo[kNotificationDictionaryDescriptionKey];
-	self.status = [NSString stringWithFormat:
-				   NSLocalizedString(@"Commit hook failed: %@",
-									 @"Message in status bar when running a commit hook failed, including the reason for the failure"),
-				   reason];
-	[self.windowController showCommitHookFailedSheet:NSLocalizedString(@"Commit hook failed", @"Title for sheet that running a commit hook has failed")
-												  infoText:reason
-										  commitController:self];
 }
 
 - (void)amendCommit:(NSNotification *)notification

@@ -25,9 +25,6 @@ extern NSString *PBGitIndexFinishedIndexRefresh;
 // The "indexChanges" array has changed
 extern NSString *PBGitIndexIndexUpdated;
 
-// Committing files
-extern NSString *PBGitIndexCommitStatus;
-
 // Changing to amend
 extern NSString *PBGitIndexAmendMessageAvailable;
 
@@ -52,7 +49,7 @@ extern NSString *PBGitIndexAmendMessageAvailable;
 // Refresh the index
 - (void)refresh;
 
-- (BOOL)commitWithMessage:(NSString *)commitMessage andVerify:(BOOL)doVerify error:(NSError **)error;
+- (void)performCommitWithMessage:(NSString *)commitMessage force:(BOOL)force progressHandler:(void (^)(NSString *))progressHandler completionHandler:(void (^)(NSError *error, GTOID *oid))completionHandler;
 
 // Inter-file changes:
 - (BOOL)stageFiles:(NSArray<PBChangedFile *> *)stageFiles error:(NSError **)error;
