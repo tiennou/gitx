@@ -12,6 +12,7 @@
 #import "PBGitBinary.h"
 #import "PBTask.h"
 #import "PBChangedFile.h"
+#import "PBError.h"
 
 NSString *PBGitIndexIndexRefreshStatus = @"PBGitIndexIndexRefreshStatus";
 NSString *PBGitIndexIndexRefreshFailed = @"PBGitIndexIndexRefreshFailed";
@@ -25,7 +26,6 @@ NSString *PBGitIndexCommitHookFailed = @"PBGitIndexCommitHookFailed";
 NSString *PBGitIndexFinishedCommit = @"PBGitIndexFinishedCommit";
 
 NSString *PBGitIndexAmendMessageAvailable = @"PBGitIndexAmendMessageAvailable";
-NSString *PBGitIndexOperationFailed = @"PBGitIndexOperationFailed";
 
 NS_ENUM(NSUInteger, PBGitIndexOperation) {
 	PBGitIndexStageFiles,
@@ -406,14 +406,7 @@ NS_ENUM(NSUInteger, PBGitIndexOperation) {
 													  userInfo:[NSDictionary dictionaryWithObject:reason forKey:@"description"]];
 }
 
-- (void)postOperationFailed:(NSString *)description
-{
-	[[NSNotificationCenter defaultCenter] postNotificationName:PBGitIndexOperationFailed
-														object:self
-													  userInfo:[NSDictionary dictionaryWithObject:description forKey:@"description"]];	
-}
-
-- (BOOL)performStageOrUnstage:(BOOL)stage withFiles:(NSArray *)files
+- (BOOL)performStageOrUnstage:(BOOL)stage withFiles:(NSArray *)files error:(NSError **)error
 {
 	// Do staging files by chunks of 1000 files each, to prevent program freeze (because NSPipe has limited capacity)
 
@@ -455,13 +448,20 @@ NS_ENUM(NSUInteger, PBGitIndexOperation) {
 			arguments = @[@"update-index", @"-z", @"--index-info"];
 		}
 
-		NSError *error = nil;
-		BOOL success = [self.repository launchTaskWithArguments:arguments
-													 input:input
-													 error:&error];
-		if (!success) {
-			[self postOperationFailed:[NSString stringWithFormat:@"Error in %@ files. Return value: %@", (stage ? @"staging" : @"unstaging"), error.userInfo[PBTaskTerminationStatusKey]]];
-			return NO;
+		NSError *gitError = nil;
+		BOOL success = [self.repository launchTaskWithArguments:arguments input:input error:&gitError];
+		if (!success && stage) {
+			return PBReturnErrorWithBuilder(error, ^{
+				NSString *desc = @"Staging files failed";
+				NSString *failure = @"";
+				return [NSError pb_errorWithDescription:desc failureReason:failure underlyingError:gitError];
+			});
+		} else if (!success && !stage) {
+			return PBReturnErrorWithBuilder(error, ^{
+				NSString *desc = @"Unstaging files failed";
+				NSString *failure = @"";
+				return [NSError pb_errorWithDescription:desc failureReason:failure underlyingError:gitError];
+			});
 		}
 
 		for (NSUInteger i = loopFrom; i < loopTo; i++) {
@@ -482,33 +482,34 @@ NS_ENUM(NSUInteger, PBGitIndexOperation) {
 	return YES;
 }
 
-- (BOOL)stageFiles:(NSArray<PBChangedFile *> *)stageFiles
+- (BOOL)stageFiles:(NSArray<PBChangedFile *> *)stageFiles error:(NSError **)error
 {
-	return [self performStageOrUnstage:YES withFiles:stageFiles];
+	return [self performStageOrUnstage:YES withFiles:stageFiles error:error];
 }
 
-- (BOOL)unstageFiles:(NSArray<PBChangedFile *> *)unstageFiles
+- (BOOL)unstageFiles:(NSArray<PBChangedFile *> *)unstageFiles error:(NSError **)error
 {
-	return [self performStageOrUnstage:NO withFiles:unstageFiles];
+	return [self performStageOrUnstage:NO withFiles:unstageFiles error:error];
 }
 
-- (void)discardChangesForFiles:(NSArray<PBChangedFile *> *)discardFiles
+- (BOOL)discardChangesForFiles:(NSArray<PBChangedFile *> *)discardFiles error:(NSError **)error
 {
 	NSArray *paths = [discardFiles valueForKey:@"path"];
 	NSString *input = [paths componentsJoinedByString:@"\0"];
 
 	NSArray *arguments = @[@"checkout-index", @"--index", @"--quiet", @"--force", @"-z", @"--stdin"];
-
-	PBTask *task = [PBTask taskWithLaunchPath:[PBGitBinary path]
-									arguments:arguments
-								  inDirectory:self.repository.workingDirectoryURL.path];
+	PBTask *task = [self.repository taskWithArguments:arguments];
 	task.standardInputData = [input dataUsingEncoding:NSUTF8StringEncoding];
 
-	NSError *error = nil;
-	BOOL success = [task launchTask:&error];
+	NSError *gitError = nil;
+	BOOL success = [task launchTask:&gitError];
 	if (!success) {
-		[self postOperationFailed:[NSString stringWithFormat:@"Discarding changes failed with return value %@", error.userInfo[PBTaskTerminationStatusKey]]];
-		return;
+		return PBReturnErrorWithBuilder(error, ^{
+			NSString *desc = @"Failed to discard changes";
+			NSString *failure = [NSString stringWithFormat:@"Discarding changes failed with return value %@", gitError.userInfo[PBTaskTerminationStatusKey]];
+
+			return [NSError pb_errorWithDescription:desc failureReason:failure underlyingError:gitError];
+		});
 	}
 
 	for (PBChangedFile *file in discardFiles)
@@ -516,25 +517,27 @@ NS_ENUM(NSUInteger, PBGitIndexOperation) {
 			file.hasUnstagedChanges = NO;
 
 	[self postIndexUpdated];
+
+	return YES;
 }
 
-- (BOOL)applyPatch:(NSString *)hunk stage:(BOOL)stage reverse:(BOOL)reverse;
+- (BOOL)applyPatch:(NSString *)hunk stage:(BOOL)stage reverse:(BOOL)reverse error:(NSError **)error
 {
-	NSMutableArray *array = [NSMutableArray arrayWithObjects:@"apply", @"--unidiff-zero", nil];
+	NSMutableArray *arguments = [NSMutableArray arrayWithObjects:@"apply", @"--unidiff-zero", nil];
 	if (stage)
-		[array addObject:@"--cached"];
+		[arguments addObject:@"--cached"];
 	if (reverse)
-		[array addObject:@"--reverse"];
+		[arguments addObject:@"--reverse"];
 
-	NSError *error = nil;
-	NSString *output = [self.repository outputOfTaskWithArguments:array
-															input:hunk
-															error:&error];
-
-	if (!output) {
-		NSString *message = [NSString stringWithFormat:@"Applying patch failed with return value %@. Error: %@", error.userInfo[PBTaskTerminationStatusKey], error.userInfo[PBTaskTerminationOutputKey]];
-		[self postOperationFailed:message];
-		return NO;
+	NSError *gitError = nil;
+	BOOL success = [self.repository launchTaskWithArguments:arguments input:hunk error:&gitError];
+	if (!success) {
+		return PBReturnErrorWithBuilder(error, ^{
+			NSString *desc = NSLocalizedString(@"Patch application failed", @"PBGitIndex - apply patch error description");
+			NSString *failure = NSLocalizedString(@"The following patch failed to apply:", @"PBGitIndex - apply patch error description");
+			failure = [failure stringByAppendingFormat:@"\n%@", hunk];
+			return [NSError pb_errorWithDescription:desc failureReason:failure underlyingError:gitError];
+		});
 	}
 
 	// TODO: Try to be smarter about what to refresh
@@ -543,24 +546,18 @@ NS_ENUM(NSUInteger, PBGitIndexOperation) {
 }
 
 
-- (NSString *)diffForFile:(PBChangedFile *)file staged:(BOOL)staged contextLines:(NSUInteger)context
+- (NSString *)diffForFile:(PBChangedFile *)file staged:(BOOL)staged contextLines:(NSUInteger)context error:(NSError **)error
 {
 	NSString *parameter = [NSString stringWithFormat:@"-U%lu", context];
 	if (staged) {
-		NSArray *arguments = nil;
+		NSString *indexPath = [@":0:" stringByAppendingString:file.path];
+
 		if (file.status == NEW) {
-			NSString *indexPath = [@":0:" stringByAppendingString:file.path];
-			arguments = @[@"show", indexPath];
-		} else {
-			arguments = @[@"diff-index", parameter, @"--cached", self.parentTree, @"--", file.path];
+			return [self.repository outputOfTaskWithArguments:@[@"show", indexPath] error:error];
 		}
 
-		NSError *error = nil;
-		NSString *output = [self.repository outputOfTaskWithArguments:arguments error:&error];
-		if (!output) {
-			PBLogError(error);
-		}
-		return output;
+		NSArray *arguments = @[@"diff-index", parameter, @"--cached", self.parentTree, @"--", file.path];
+		return [self.repository outputOfTaskWithArguments:arguments error:error];
 	}
 
 	// unstaged
@@ -574,13 +571,12 @@ NS_ENUM(NSUInteger, PBGitIndexOperation) {
 		return contents;
 	}
 
-	NSError *error = nil;
-	NSString *output = [self.repository outputOfTaskWithArguments:@[@"diff-files", parameter, @"--", file.path]
-															error:&error];
-	if (!output) {
-		PBLogError(error);
-	}
-	return output;
+	return [self.repository outputOfTaskWithArguments:@[@"diff-files", parameter, @"--", file.path] error:error];
+}
+
+/* This is called from JS */
+- (NSString *)diffForFile:(PBChangedFile *)file staged:(BOOL)staged contextLines:(NSUInteger)context {
+	return [self diffForFile:file staged:staged contextLines:context error:NULL];
 }
 
 # pragma mark WebKit Accessibility

@@ -100,15 +100,24 @@ static void * const CachedFileSelectedContext = @"CachedFileSelectedContext";
 
 - (void)stageHunk:(NSString *)hunk reverse:(BOOL)reverse
 {
-	[controller.index applyPatch:hunk stage:YES reverse:reverse];
-	// FIXME: Don't need a hard refresh
+	NSError *error = nil;
+	if (![controller.index applyPatch:hunk stage:YES reverse:reverse error:&error]) {
+		[controller.windowController showErrorSheet:error];
+		return;
+	}
 
+	// FIXME: Don't need a hard refresh
 	[self refresh];
 }
 
 - (void) discardHunk:(NSString *)hunk
 {
-    [controller.index applyPatch:hunk stage:NO reverse:YES];
+	NSError *error = nil;
+	if (![controller.index applyPatch:hunk stage:NO reverse:YES error:&error]) {
+		[controller.windowController showErrorSheet:error];
+		return;
+	}
+
     [self refresh];
 }
 

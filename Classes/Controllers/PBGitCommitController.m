@@ -62,7 +62,6 @@
 	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(commitHookFailed:) name:PBGitIndexCommitHookFailed object:index];
 	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(amendCommit:) name:PBGitIndexAmendMessageAvailable object:index];
 	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(indexChanged:) name:PBGitIndexIndexUpdated object:index];
-	[[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(indexOperationFailed:) name:PBGitIndexOperationFailed object:index];
 
 	return self;
 }
@@ -186,8 +185,12 @@
 
 - (void)discardChangesForFiles:(NSArray *)files force:(BOOL)force
 {
-	void (^performDiscard)(void) = ^ {
-		[self.repository.index discardChangesForFiles:files];
+	void (^performDiscard)(void) = ^{
+		NSError *error = nil;
+		BOOL success = [self.repository.index discardChangesForFiles:files error:&error];
+		if (!success) {
+			[self.windowController showErrorSheet:error];
+		}
 	};
 
 	if (!force) {
@@ -359,12 +362,22 @@ static void reselectNextFile(NSArrayController *controller)
 }
 
 - (IBAction)stageFiles:(id)sender {
-	[self.repository.index stageFiles:unstagedFilesController.selectedObjects];
+	NSError *error = nil;
+	BOOL success = [self.repository.index stageFiles:unstagedFilesController.selectedObjects error:&error];
+	if (!success) {
+		[self.windowController showErrorSheet:error];
+		return;
+	}
 	reselectNextFile(unstagedFilesController);
 }
 
 - (IBAction)unstageFiles:(id)sender {
-	[self.repository.index unstageFiles:stagedFilesController.selectedObjects];
+	NSError *error = nil;
+	BOOL success = [self.repository.index unstageFiles:stagedFilesController.selectedObjects error:&error];
+	if (!success) {
+		[self.windowController showErrorSheet:error];
+		return;
+	}
 	reselectNextFile(stagedFilesController);
 }
 
@@ -449,12 +462,6 @@ static void reselectNextFile(NSArrayController *controller)
 	[unstagedFilesController rearrangeObjects];
     
     commitButton.enabled = ([[stagedFilesController arrangedObjects] count] > 0);
-}
-
-- (void)indexOperationFailed:(NSNotification *)notification
-{
-	[self.windowController showMessageSheet:NSLocalizedString(@"Index operation failed", @"Title for sheet that running an index operation has failed")
-										 infoText:notification.userInfo[kNotificationDictionaryDescriptionKey]];
 }
 
 #pragma mark NSTextView delegate methods
@@ -653,10 +660,15 @@ BOOL shouldTrashInsteadOfDiscardAnyFileIn(NSArray <PBChangedFile *> *files)
 	NSIndexSet *selectionIndexes = [tableView selectedRowIndexes];
 	NSArray *files = [[controller arrangedObjects] objectsAtIndexes:selectionIndexes];
 
+	BOOL success = NO;
+	NSError *error = nil;
 	if (tableView == unstagedTable) {
-		[self.index stageFiles:files];
+		success = [self.index stageFiles:files error:&error];
 	} else {
-		[self.index unstageFiles:files];
+		success = [self.index unstageFiles:files error:&error];
+	}
+	if (!success) {
+		[self.windowController showErrorSheet:error];
 	}
 }
 
@@ -707,14 +719,19 @@ BOOL shouldTrashInsteadOfDiscardAnyFileIn(NSArray <PBChangedFile *> *files)
 	NSArrayController *controller = [aTableView tag] == 0 ? stagedFilesController : unstagedFilesController;
 	NSArray *files = [[controller arrangedObjects] objectsAtIndexes:rowIndexes];
 
+	NSError *error = nil;
+	BOOL success = NO;
 	if ([aTableView tag] == 0) {
-		[self.index unstageFiles:files];
+		success = [self.index unstageFiles:files error:&error];
 	}
 	else {
-		[self.index stageFiles:files];
+		success = [self.index stageFiles:files error:&error];
+	}
+	if (!success) {
+		[self.windowController showErrorSheet:error];
 	}
 
-	return YES;
+	return success;
 }
 
 @end

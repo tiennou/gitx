@@ -34,11 +34,6 @@ extern NSString *PBGitIndexFinishedCommit;
 // Changing to amend
 extern NSString *PBGitIndexAmendMessageAvailable;
 
-// This is for general operations, like applying a patch
-extern NSString *PBGitIndexOperationFailed;
-
-
-
 // Represents a git index for a given work tree.
 // As a single git repository can have multiple trees,
 // the tree has to be given explicitly, even though
@@ -63,13 +58,13 @@ extern NSString *PBGitIndexOperationFailed;
 - (void)commitWithMessage:(NSString *)commitMessage andVerify:(BOOL) doVerify;
 
 // Inter-file changes:
-- (BOOL)stageFiles:(NSArray<PBChangedFile *> *)stageFiles;
-- (BOOL)unstageFiles:(NSArray<PBChangedFile *> *)unstageFiles;
-- (void)discardChangesForFiles:(NSArray<PBChangedFile *> *)discardFiles;
+- (BOOL)stageFiles:(NSArray<PBChangedFile *> *)stageFiles error:(NSError **)error;
+- (BOOL)unstageFiles:(NSArray<PBChangedFile *> *)unstageFiles error:(NSError **)error;
+- (BOOL)discardChangesForFiles:(NSArray<PBChangedFile *> *)discardFiles error:(NSError **)error;
 
 // Intra-file changes
-- (BOOL)applyPatch:(NSString *)hunk stage:(BOOL)stage reverse:(BOOL)reverse;
-- (NSString *)diffForFile:(PBChangedFile *)file staged:(BOOL)staged contextLines:(NSUInteger)context;
+- (BOOL)applyPatch:(NSString *)hunk stage:(BOOL)stage reverse:(BOOL)reverse error:(NSError **)error;
+- (NSString *)diffForFile:(PBChangedFile *)file staged:(BOOL)staged contextLines:(NSUInteger)context error:(NSError **)error;
 
 @end
 
