@@ -44,7 +44,7 @@ def generate_release_notes(project):
 
     attrs = dict()
     attrs['version'] = project.build_version()
-    attrs['changelog'] = generate_changelog(project)
+    attrs['changelog'] = "FIXME" # generate_changelog(project)
     attrs['signature'] = "" if artifact_signature == None else "DMG Signature: %s" % (artifact_signature)
 
     template_source = open(project.release_notes_tmpl(), 'r').read()
@@ -102,15 +102,17 @@ def publish_cmd(args):
     project = Project(os.getcwd(), "release", label)
 
     print "Preparing release {}".format(project.release_tag_name())
-    helpers.assert_clean()
-    helpers.assert_branch(project.release_branch())
+    if not args.travis_deploy:
+        helpers.assert_clean()
+        helpers.assert_branch(project.release_branch())
     helpers.set_version(project.build_version(), project.label())
 
-    print("Building: {}".format(project.build_product()))
-    build.build(project)
+    if not args.travis_deploy:
+        print("Building: {}".format(project.build_product()))
+        build.build(project)
 
-    print("Signing product with identity \"{}\"".format(project.codesign_identity()))
-    sign.sign_everything_in_app(project.build_product(), project.codesign_identity())
+        print("Signing product with identity \"{}\"".format(project.codesign_identity()))
+        sign.sign_everything_in_app(project.build_product(), project.codesign_identity())
 
     print("Packaging {} to {} as {}".format(project.build_product(), project.image_path(), project.image_name()))
     package(project.build_product(), project.image_path(), project.image_name())
@@ -118,12 +120,12 @@ def publish_cmd(args):
     print("Generating release notes...")
     generate_release_notes(project)
 
+    if not args.travis_deploy:
+        print("Committing and tagging \"{}\"".format(project.release_tag_name()))
+        commit_release(project)
+        tag_release(project.release_tag_name(), args.force)
 
-    print("Committing and tagging \"{}\"".format(project.release_tag_name()))
-    commit_release(project)
-    tag_release(project.release_tag_name(), args.force)
-
-    publish_release(project, args.prerelease, args.draft, args.dry_run)
+        publish_release(project, args.prerelease, args.draft, args.dry_run)
 
 
 if __name__ == "__main__":
@@ -132,6 +134,7 @@ if __name__ == "__main__":
     parser.add_argument('-d', '--draft', action='store_true')
     parser.add_argument('-f', '--force', action='store_true')
     parser.add_argument('-n', '--dry-run', action='store_true')
+    parser.add_argument('--travis-deploy', action='store_true')
     parser.set_defaults(func=publish_cmd)
 
     args = parser.parse_args()

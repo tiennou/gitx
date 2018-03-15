@@ -1,6 +1,23 @@
 language: objective-c
 osx_image: xcode8.3
+#git:
+#  depth: false
 before_install:
  - External/objective-git/script/bootstrap
 script:
- - xcodebuild -workspace GitX.xcworkspace -scheme GitX build | xcpretty
+ - xcodebuild -workspace GitX.xcworkspace -scheme GitX -configuration Release BUILD_DIR=$(pwd)/build build | xcpretty
+before_deploy:
+ - git config --local user.name "Travis CI"
+ - git config --local user.email "travis-ci@gitx.github.io"
+ - git tag "nightly-$(git log --format=%h -1)"
+ - openssl aes-256-cbc -K $encrypted_80f225c90918_key -iv $encrypted_80f225c90918_iv -in updates/gitx-updates.key.enc -out updates/gitx-updates.key -d
+ - python Scripts/publish.py --travis-deploy
+deploy:
+  provider: releases
+  file_glob: true
+  file: release/GitX-*.dmg
+  skip_cleanup: true
+  on:
+    branch: publish-cli
+  api_key:
+    secure: C8DADxYOnFYpnXDpCRi69BLEjhShCFgU5mkxmqk8onCOVkfRzEQ6K0x04Lxa8oCHrJd/4HdMyIRQW3gD6Hxm+bLAYJzUyDsdjeX3l6U1X5fl4y6ZcuM9tA3PK1N4MZmjWOolGukkLUWoHhhod9jKuAYuWZOasJRuQIH0b+BHDSb6nbdEPCXM3WoHBe3WRYYkiuqr6thvfoJiKETIB5wE+BMKRd23fHaJLVJEHBXYC8X+FptkbVRx3tcaekERWBJffTbAvhANoz3+Ny7UDg8X7y4VYPlnLHiX8Mxbodn6ScI++qVCgGnO+EilHvP3i60T5ftPE4xy5tCfo7lcIMrJxsmow+KWWlJAgXmT+QkCfSmvHhlOW7WlnVI7qo4+1KNmDTf1debS32uY60sjWRFfyk6GiD7Jb7NnKXmx9EZitIR+YBrKbfQZH61/5FEqVYoLUJAAxNpL+PuMieNsyTOyVuV16bOy80yPF7MK48QeYZV+M8lRyUIosVgN6fNOvBciHIVNIHO0Uyaka1smtpunf+Ruq8yeHeDKkwaG0vAgx26/4Ms4Osl002XXpX0DH+4BrSrpq6wTnLurB101eZ7+TjmMr1T3PlHSnlsKSTP8qPBOjX4wtYn1nnfSOUPu/Zq58NimvMcW1d0RX5XFaAKehyyf3Z4bBnBRXa3jDIlb7dY=
