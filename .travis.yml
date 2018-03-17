@@ -1,7 +1,7 @@
 language: objective-c
 osx_image: xcode8.3
-#git:
-#  depth: false
+git:
+  depth: false
 before_install:
  - External/objective-git/script/bootstrap
 script:
@@ -12,11 +12,13 @@ before_deploy:
  - git tag "nightly-$(git log --format=%h -1)"
  - openssl aes-256-cbc -K $encrypted_80f225c90918_key -iv $encrypted_80f225c90918_iv -in updates/gitx-updates.key.enc -out updates/gitx-updates.key -d
  - python Scripts/publish.py --travis-deploy
+ - "export RELEASE_BODY=$(grep '^DMG Signature: ' release/*.markdown)"
 deploy:
   provider: releases
   file_glob: true
   file: release/GitX-*.dmg
   skip_cleanup: true
+  body: ${RELEASE_BODY}
   on:
     branch: publish-cli
   api_key:

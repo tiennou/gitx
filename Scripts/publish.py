@@ -44,7 +44,7 @@ def generate_release_notes(project):
 
     attrs = dict()
     attrs['version'] = project.build_version()
-    attrs['changelog'] = "FIXME" # generate_changelog(project)
+    attrs['changelog'] = generate_changelog(project)
     attrs['signature'] = "" if artifact_signature == None else "DMG Signature: %s" % (artifact_signature)
 
     template_source = open(project.release_notes_tmpl(), 'r').read()
