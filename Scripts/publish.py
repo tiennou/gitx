@@ -41,6 +41,7 @@ def generate_changelog(project):
 
 def generate_release_notes(project):
     artifact_signature = helpers.sign_file(project.image_path(), project.update_signing_keyfile())
+    print("DMG Signature: %s" % (artifact_signature,))
 
     attrs = dict()
     attrs['version'] = project.build_version()
@@ -101,11 +102,15 @@ def publish_cmd(args):
     
     project = Project(os.getcwd(), "release", label)
 
+    if args.only_set_version:
+        helpers.set_version(project.build_version(), project.label())
+        return
+
     print "Preparing release {}".format(project.release_tag_name())
     if not args.travis_deploy:
         helpers.assert_clean()
         helpers.assert_branch(project.release_branch())
-    helpers.set_version(project.build_version(), project.label())
+        helpers.set_version(project.build_version(), project.label())
 
     if not args.travis_deploy:
         print("Building: {}".format(project.build_product()))
@@ -126,6 +131,9 @@ def publish_cmd(args):
         tag_release(project.release_tag_name(), args.force)
 
         publish_release(project, args.prerelease, args.draft, args.dry_run)
+    else:
+        print("Tagging \"{}\"".format(project.release_tag_name()))
+        tag_release(project.release_tag_name(), args.force)
 
 
 if __name__ == "__main__":
@@ -135,6 +143,7 @@ if __name__ == "__main__":
     parser.add_argument('-f', '--force', action='store_true')
     parser.add_argument('-n', '--dry-run', action='store_true')
     parser.add_argument('--travis-deploy', action='store_true')
+    parser.add_argument('--only-set-version', action='store_true')
     parser.set_defaults(func=publish_cmd)
 
     args = parser.parse_args()
