@@ -189,7 +189,9 @@
 								 commitMessageView.string = @"";
 
 								 if (oid) {
-									 [webController setStateMessage:@"Successfully created commit"];
+									 self.status = NSLocalizedString(@"Successfully created commit", @"PBGitCommitController - commit successful status message (short)");
+									 NSString *msg = [NSString stringWithFormat:NSLocalizedString(@"Successfully created commit %@", @"PBGitCommitController - commit successful status message"), oid.SHA];
+									 [webController setStateMessage:msg];
 								 }
 
 								 /* post-commit error can be reported inline with a success */
