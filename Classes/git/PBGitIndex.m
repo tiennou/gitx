@@ -513,7 +513,7 @@ NS_ENUM(NSUInteger, PBGitIndexOperation) {
 	}
 
 	for (PBChangedFile *file in discardFiles)
-		if (file.status != NEW)
+		if (file.isUntracked)
 			file.hasUnstagedChanges = NO;
 
 	[self postIndexUpdated];
@@ -552,7 +552,7 @@ NS_ENUM(NSUInteger, PBGitIndexOperation) {
 	if (staged) {
 		NSString *indexPath = [@":0:" stringByAppendingString:file.path];
 
-		if (file.status == NEW) {
+		if (file.isUntracked) {
 			return [self.repository outputOfTaskWithArguments:@[@"show", indexPath] error:error];
 		}
 
@@ -561,7 +561,7 @@ NS_ENUM(NSUInteger, PBGitIndexOperation) {
 	}
 
 	// unstaged
-	if (file.status == NEW) {
+	if (file.isUntracked) {
 		NSStringEncoding encoding;
 		NSError *error = nil;
 		NSURL *fileURL = [self.repository.workingDirectoryURL URLByAppendingPathComponent:file.path];
@@ -608,12 +608,12 @@ NS_ENUM(NSUInteger, PBGitIndexOperation) {
 				else
 					file.hasUnstagedChanges = YES;
 				if ([[fileStatus objectAtIndex:4] isEqualToString:@"D"])
-					file.status = DELETED;
+					file.status = PBChangedFileStatusDeleted;
 			} else {
 				// Untracked file, set status to NEW, only unstaged changes
 				file.hasStagedChanges = NO;
 				file.hasUnstagedChanges = YES;
-				file.status = NEW;
+				file.status = PBChangedFileStatusUntracked;
 			}
 
 			// We handled this file, remove it from the dictionary
@@ -628,12 +628,12 @@ NS_ENUM(NSUInteger, PBGitIndexOperation) {
 			// Tracked file does not have unstaged changes, file is not new,
 			// so we can set it to No. (If it would be new, it would not
 			// be in this dictionary, but in the "other dictionary").
-			else if (tracked && file.status != NEW)
+			else if (tracked && !file.isUntracked)
 				file.hasUnstagedChanges = NO;
 			// Unstaged, untracked dictionary ("Other" files), and file
 			// is indicated as new (which would be untracked), so let's
 			// remove it
-			else if (!tracked && file.status == NEW && file.commitBlobSHA == nil)
+			else if (!tracked && file.isUntracked && file.commitBlobSHA == nil)
 				file.hasUnstagedChanges = NO;
 		}
 	}
@@ -650,11 +650,11 @@ NS_ENUM(NSUInteger, PBGitIndexOperation) {
 
 		PBChangedFile *file = [[PBChangedFile alloc] initWithPath:path];
 		if ([[fileStatus objectAtIndex:4] isEqualToString:@"D"])
-			file.status = DELETED;
+			file.status = PBChangedFileStatusDeleted;
 		else if([[fileStatus objectAtIndex:0] isEqualToString:@":000000"])
-			file.status = NEW;
+			file.status = PBChangedFileStatusUntracked;
 		else
-			file.status = MODIFIED;
+			file.status = PBChangedFileStatusModified;
 
 		if (tracked) {
 			file.commitBlobMode = [[fileStatus objectAtIndex:0] substringFromIndex:1];

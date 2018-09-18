@@ -8,37 +8,51 @@
 
 #import "PBChangedFile.h"
 
+NSString *PBStringFromFileStatus(PBChangedFileStatus status)
+{
+	NSArray *statii = @[@"UNTRACKED", @"MODIFIED", @"DELETED"];
+	return statii[status];
+}
+
 @implementation PBChangedFile
 
-@synthesize path, status, hasStagedChanges, hasUnstagedChanges, commitBlobSHA, commitBlobMode;
-
-- (id) initWithPath:(NSString *)p
+- (instancetype)initWithPath:(NSString *)p
 {
     self = [super init];
-    
-    if (self) {
-        path = p;
-    }
+	if (!self) return nil;
+
+	_path = p;
+
 	return self;
+}
+
+- (NSString *)description
+{
+	return _path;
+}
+
+- (NSString *)debugDescription
+{
+	return [NSString stringWithFormat:@"<%@:%p path: %@, status: %@, u: %@, s: %@>", NSStringFromClass(self.class), self, self.path, PBStringFromFileStatus(self.status), @(self.hasUnstagedChanges), @(self.hasStagedChanges)];
 }
 
 - (NSString *)indexInfo
 {
-	NSAssert(status == NEW || self.commitBlobSHA, @"File is not new, but doesn't have an index entry!");
+	NSAssert(self.isUntracked || self.commitBlobSHA, @"File is not new, but doesn't have an index entry!");
 	if (!self.commitBlobSHA)
 		return [NSString stringWithFormat:@"0 0000000000000000000000000000000000000000\t%@\0", self.path];
 	else
 		return [NSString stringWithFormat:@"%@ %@\t%@\0", self.commitBlobMode, self.commitBlobSHA, self.path];
 }
 
-- (NSImage *) icon
+- (NSImage *)icon
 {
 	NSString *filename;
-	switch (status) {
-		case NEW:
+	switch (_status) {
+		case PBChangedFileStatusUntracked:
 			filename = @"new_file";
 			break;
-		case DELETED:
+		case PBChangedFileStatusDeleted:
 			filename = @"deleted_file";
 			break;
 		default:
@@ -53,7 +67,8 @@
 	return NO;
 }
 
-+ (BOOL)isKeyExcludedFromWebScript:(const char *)name {
++ (BOOL)isKeyExcludedFromWebScript:(const char *)name
+{
 	return NO;
 }
 

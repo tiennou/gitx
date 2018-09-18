@@ -517,7 +517,7 @@ BOOL shouldTrashInsteadOfDiscardAnyFileIn(NSArray <PBChangedFile *> *files)
 {
 	for (PBChangedFile *file in files)
 	{
-		if (file.status != NEW)
+		if (file.isUntracked)
 		{
 			return NO;
 		}

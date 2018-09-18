@@ -9,30 +9,27 @@
 #import <Cocoa/Cocoa.h>
 
 typedef enum {
-	NEW,
-	MODIFIED,
-	DELETED
+	PBChangedFileStatusUntracked,
+	PBChangedFileStatusModified,
+	PBChangedFileStatusDeleted
 } PBChangedFileStatus;
 
-@interface PBChangedFile : NSObject {
-	NSString *path;
-	BOOL hasStagedChanges;
-	BOOL hasUnstagedChanges;
+NS_ASSUME_NONNULL_BEGIN
 
-	// Index and HEAD stuff, to be used to revert changes
-	NSString *commitBlobSHA;
-	NSString *commitBlobMode;
+@interface PBChangedFile : NSObject
 
-	PBChangedFileStatus status;
-}
-
-
-@property (copy) NSString *path, *commitBlobSHA, *commitBlobMode;
+@property (copy) NSString *path;
+@property (copy) NSString *commitBlobSHA;
+@property (copy) NSString *commitBlobMode;
 @property (assign) PBChangedFileStatus status;
-@property (assign) BOOL hasStagedChanges, hasUnstagedChanges;
+@property (assign) BOOL hasStagedChanges;
+@property (assign) BOOL hasUnstagedChanges;
+@property (assign, getter=isUntracked) BOOL untracked;
+
+- (instancetype)initWithPath:(NSString *)p;
 
 - (NSImage *)icon;
 - (NSString *)indexInfo;
-
-- (id) initWithPath:(NSString *)p;
 @end
+
+NS_ASSUME_NONNULL_END
